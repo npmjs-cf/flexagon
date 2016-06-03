@@ -6,8 +6,7 @@ defmodule Flexagon do
     use Plug.Debugger
   end
 
-  @target Application.get_env(:flexagon, :target)
-  @scopeTarget Application.get_env(:flexagon, :scopeTarget)
+  @version Mix.Project.config[:version]
 
   plug Plug.RequestId
   plug Plug.Logger
@@ -18,28 +17,25 @@ defmodule Flexagon do
     port = Application.get_env(:flexagon, :port)
     IO.puts "Running Flexagon with Cowboy on http://localhost:#{port}"
     Plug.Adapters.Cowboy.http __MODULE__, [], port: port
-    :timer.sleep(:infinity)
   end
 
   get "/" do
-    vsn = Mix.Project.config[:version]
-
     conn
     |> put_resp_header("server", "flexagon")
     |> put_resp_header("cache-control", "public")
     |> put_resp_content_type("application/json")
-    |> send_resp(200, Poison.encode!(%{verison: vsn, name: "flexagon"}))
+    |> send_resp(200, Poison.encode!(%{verison: @version, name: "flexagon"}))
   end
 
-  get "/@:scopedPackage" do
-    [scope, package] = String.split scopedPackage, "/"
+  get "/@:scoped_package" do
+    [scope, package] = String.split scoped_package, "/"
     headers = :hackney_headers.new(conn.req_headers)
     headers = :hackney_headers.delete("accept-encoding", headers)
-    headers = :hackney_headers.store("host", @scopeTarget, headers)
-    headers = :hackney_headers.store("x-forwarded-for", :inet.ntoa(conn.remote_ip), headers)
+    headers = :hackney_headers.store("host", scope_target, headers)
+    headers = :hackney_headers.store("x-forwarded-for", remote_ip(conn), headers)
     headers = :hackney_headers.insert("via", "1.1 flexagon", headers)
     headers = :hackney_headers.to_list(headers)
-    {:ok, client} = HTTPoison.get("http://" <> @scopeTarget <> "/@" <> scope <> "%2F" <> package, headers)
+    {:ok, client} = HTTPoison.get("http://#{scope_target}/@#{scope}%2F#{package}", headers)
 
     conn
     |> read_proxy(client)
@@ -47,22 +43,22 @@ defmodule Flexagon do
 
   get "/@:scope/:package/-/:tarball" do
     headers = :hackney_headers.new(conn.req_headers)
-    headers = :hackney_headers.store("host", @scopeTarget, headers)
-    headers = :hackney_headers.store("x-forwarded-for", :inet.ntoa(conn.remote_ip), headers)
+    headers = :hackney_headers.store("host", scope_target, headers)
+    headers = :hackney_headers.store("x-forwarded-for", remote_ip(conn), headers)
     headers = :hackney_headers.insert("via", "1.1 flexagon", headers)
     headers = :hackney_headers.to_list(headers)
-    HTTPoison.get!("http://" <> @scopeTarget <> "/@" <> scope <> "/" <> package <> "/-/" <> tarball, headers, stream_to: self)
+    HTTPoison.get!("http://#{scope_target}/@#{scope}/#{package}/-/#{tarball}", headers, stream_to: self)
 
     stream_async_response(conn)
   end
 
   get "/:package/-/:tarball" do
     headers = :hackney_headers.new(conn.req_headers)
-    headers = :hackney_headers.store("host", @target, headers)
-    headers = :hackney_headers.store("x-forwarded-for", :inet.ntoa(conn.remote_ip), headers)
+    headers = :hackney_headers.store("host", target, headers)
+    headers = :hackney_headers.store("x-forwarded-for", remote_ip(conn), headers)
     headers = :hackney_headers.insert("via", "1.1 flexagon", headers)
     headers = :hackney_headers.to_list(headers)
-    {:ok, _} = HTTPoison.get("http://" <> @target <> "/" <> package <> "/-/" <> tarball, headers, stream_to: self)
+    {:ok, _} = HTTPoison.get("http://#{target}/#{package}/-/#{tarball}", headers, stream_to: self)
 
     stream_async_response(conn)
   end
@@ -70,11 +66,11 @@ defmodule Flexagon do
   get "/:package/*paths" do
     headers = :hackney_headers.new(conn.req_headers)
     headers = :hackney_headers.delete("accept-encoding", headers)
-    headers = :hackney_headers.store("host", @target, headers)
-    headers = :hackney_headers.store("x-forwarded-for", :inet.ntoa(conn.remote_ip), headers)
+    headers = :hackney_headers.store("host", target, headers)
+    headers = :hackney_headers.store("x-forwarded-for", remote_ip(conn), headers)
     headers = :hackney_headers.insert("via", "1.1 flexagon", headers)
     headers = :hackney_headers.to_list(headers)
-    {:ok, client} = HTTPoison.get("http://" <> @target <> "/" <> package <> "/" <> Enum.join(paths, "/"), headers)
+    {:ok, client} = HTTPoison.get("http://#{target}/#{package}/" <> Enum.join(paths, "/"), headers)
 
     conn
     |> read_proxy(client)
@@ -155,7 +151,7 @@ defmodule Flexagon do
   defp rewrite_uri(uri) do
     URI.parse(uri)
     |> Map.put(:host, "localhost")
-    |> Map.put(:port, 4001)
+    |> Map.put(:port, port)
     |> URI.to_string
   end
 
@@ -164,5 +160,21 @@ defmodule Flexagon do
       {key, value} ->
         {String.downcase(key), value}
     end)
+  end
+
+  defp remote_ip(conn) do
+    :inet.ntoa(conn.remote_ip) |> List.to_string
+  end
+
+  defp target do
+    Application.get_env(:flexagon, :target)
+  end
+
+  defp scope_target do
+    Application.get_env(:flexagon, :scope_target)
+  end
+
+  defp port do
+    Application.get_env(:flexagon, :port)
   end
 end

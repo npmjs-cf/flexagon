@@ -21,11 +21,11 @@ defmodule Flexagon.Mixfile do
   #
   # Type "mix help compile.app" for more information
   def application do
-    [applications: [:logger, :plug, :cowboy, :httpoison],
+    [applications: [:logger, :cowboy, :httpoison, :plug, :poison],
      mod: {Flexagon, []},
      env: [
        target: "localhost:5984",
-       scopeTarget: "registry.npmjs.com",
+       scope_target: "registry.npmjs.com",
        port: 4001
      ]
     ]
@@ -43,9 +43,10 @@ defmodule Flexagon.Mixfile do
   defp deps do
     [
       {:cowboy, "~> 1.0.0"},
-      {:plug, "~> 1.0.0"},
+      {:exrm, "~> 1.0.5"},
       {:httpoison, "~> 0.8.3"},
-      {:poison, "~> 1.5.0"}
+      {:plug, "~> 1.1.5"},
+      {:poison, "~> 2.1.0"}
     ]
   end
 end
